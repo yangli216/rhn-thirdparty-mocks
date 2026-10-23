@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>三方 Mock 控制台</title>
+<style>
+  :root {
+    --bg: #0f1419; --panel: #161b22; --line: #262d36; --text: #d5dbe2; --dim: #8b949e;
+    --accent: #3b82f6; --ok: #3fb950; --bad: #f85149; --warn: #d29922;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 13px/1.5 -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  code, pre, input, select, textarea, button { font-family: "SF Mono", Menlo, Consolas, monospace; }
+  header {
+    display: flex; align-items: center; gap: 16px; padding: 12px 20px;
+    border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg); z-index: 5;
+  }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; }
+  header h1 small { color: var(--dim); font-weight: 400; margin-left: 8px; }
+  #health { color: var(--dim); margin-left: auto; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+  .dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); }
+  main { display: grid; grid-template-columns: minmax(0, 2fr) minmax(360px, 1fr); gap: 16px; padding: 16px 20px 0; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+  .panel > h2 {
+    font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim);
+    margin: 0; padding: 10px 14px; border-bottom: 1px solid var(--line); font-weight: 600;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .panel > h2 .right { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 400; }
+  .body { padding: 12px 14px; }
+  button {
+    background: #21262d; color: var(--text); border: 1px solid var(--line); border-radius: 6px;
+    padding: 5px 12px; cursor: pointer; font-size: 12px;
+  }
+  button:hover { border-color: var(--accent); color: #fff; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.danger:hover { border-color: var(--bad); color: var(--bad); }
+  button.mini { padding: 3px 8px; font-size: 11px; }
+  input, select, textarea {
+    background: #0d1117; color: var(--text); border: 1px solid var(--line); border-radius: 6px;
+    padding: 5px 8px; font-size: 12px; outline: none;
+  }
+  input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+  .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+  .filters label { color: var(--dim); font-size: 12px; }
+  .filters input[type=text] { width: 130px; }
+  .filters input[type=number] { width: 72px; }
+  .chk { display: inline-flex; align-items: center; gap: 5px; color: var(--dim); cursor: pointer; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--dim); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+  tbody tr.entry { cursor: pointer; }
+  tbody tr.entry:hover { background: #1c2129; }
+  tbody tr.detail > td { background: #0d1117; padding: 0; }
+  .payloads { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); }
+  .payloads > div { background: #0d1117; padding: 8px 12px; }
+  .payloads h4 { margin: 0 0 6px; font-size: 11px; color: var(--dim); font-weight: 600; text-transform: uppercase; }
+  .payloads pre { margin: 0; white-space: pre-wrap; word-break: break-all; max-height: 320px; overflow: auto; font-size: 11.5px; }
+  .pill { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 11px; border: 1px solid var(--line); color: var(--dim); }
+  .pill.chs { color: #79c0ff; border-color: #1f6feb; } .pill.alipay { color: #6ee7b7; border-color: #238636; }
+  .pill.wxpay { color: #d2a8ff; border-color: #8957e5; } .pill.ca { color: #f0b849; border-color: #9e6a03; }
+  .status-2xx { color: var(--ok); } .status-4xx, .status-5xx { color: var(--bad); }
+  .muted { color: var(--dim); } .empty { color: var(--dim); padding: 20px; text-align: center; }
+  .row { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+  .presets { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  textarea#cfg-json { width: 100%; height: 300px; resize: vertical; line-height: 1.45; }
+  #toast {
+    position: fixed; right: 20px; bottom: 20px; background: #1f6feb; color: #fff; padding: 8px 14px;
+    border-radius: 6px; font-size: 12px; opacity: 0; transition: opacity .2s; pointer-events: none;
+  }
+  #toast.show { opacity: 1; } #toast.err { background: var(--bad); }
+  section.refs { margin: 16px 20px 24px; }
+  details summary { cursor: pointer; color: var(--text); font-weight: 600; font-size: 12px; }
+  .ref-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-top: 10px; }
+  .ref-grid h4 { margin: 0 0 4px; font-size: 12px; }
+  .ref-grid ul { margin: 0; padding-left: 18px; color: var(--dim); }
+  .ref-grid code { color: #79c0ff; }
+  hr { border: 0; border-top: 1px solid var(--line); margin: 12px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>三方 Mock 控制台<small>rhn-thirdparty-mocks</small></h1>
+  <div id="health"><span class="dot bad"></span>连接中…</div>
+  <button id="btn-reset" class="danger">重置全部状态</button>
+</header>
+
+<main>
+  <section class="panel">
+    <h2>报文流水
+      <span class="right">
+        <label class="chk"><input type="checkbox" id="f-auto"> 自动刷新</label>
+        <button class="mini" id="btn-refresh">刷新</button>
+      </span>
+    </h2>
+    <div class="body">
+      <div class="filters">
+        <label>协议</label>
+        <select id="f-protocol">
+          <option value="">全部</option>
+          <option value="chs">chs</option>
+          <option value="alipay">alipay</option>
+          <option value="wxpay">wxpay</option>
+          <option value="ca">ca</option>
+        </select>
+        <label>操作码</label>
+        <input type="text" id="f-op" placeholder="infno / method / path">
+        <label>条数</label>
+        <input type="number" id="f-limit" value="100" min="1" max="1000">
+      </div>
+      <div id="requests"></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>配置与故障注入</h2>
+    <div class="body">
+      <div class="row">
+        <label>协议</label>
+        <select id="cfg-protocol">
+          <option value="chs">chs</option>
+          <option value="alipay">alipay</option>
+          <option value="wxpay">wxpay</option>
+          <option value="ca">ca</option>
+        </select>
+        <button class="mini" id="btn-cfg-load">读取</button>
+        <button class="mini primary" id="btn-cfg-apply">应用补丁</button>
+      </div>
+      <div class="presets" id="cfg-presets"></div>
+      <textarea id="cfg-json" spellcheck="false"></textarea>
+      <p class="muted" style="margin:8px 0 0;font-size:11.5px;">
+        应用为<b>部分更新</b>：只需保留要修改的字段（其余字段留空或删除即可），完整视图会回填到上方。
+      </p>
+    </div>
+  </section>
+</main>
+
+<section class="panel refs">
+  <details open>
+    <summary>场景速查（按输入值触发，无需改配置）</summary>
+    <div class="ref-grid">
+      <div>
+        <h4>MOB/CHS · 证件号（identityNumber）</h4>
+        <ul>
+          <li><code>TEST-390</code> 单条费用明细</li>
+          <li><code>TEST-MULTI</code> 多条明细</li>
+          <li><code>TEST-SUSPENDED</code> 参保人暂停</li>
+          <li><code>TEST-NOINSU</code> 无参保信息</li>
+          <li><code>TEST-REJECT-2206</code> 结算拒绝 2206</li>
+          <li><code>TEST-IMBALANCE</code> 明细合计不符</li>
+          <li><code>TEST-MISSING-AMT</code> 缺少金额</li>
+          <li><code>TEST-SLOW</code> 慢响应</li>
+          <li><code>TEST-HTTP500</code> HTTP 500</li>
+          <li><code>TEST-BADJSON</code> 非 JSON 正文</li>
+          <li><code>TEST-SIGN-EXPIRE</code> 登录态失效</li>
+          <li>其它任意值 → <span class="muted">NORMAL</span></li>
+        </ul>
+      </div>
+      <div>
+        <h4>支付宝 · 请求值钩子</h4>
+        <ul>
+          <li><code>auth_code</code> 前缀 <code>SIM_PAYING_</code> → 10003 处理中</li>
+          <li><code>auth_code</code> 前缀 <code>SIM_FAIL_</code> → 40004 失败</li>
+          <li><code>out_trade_no</code> 后缀 <code>-CLOSED</code> → 交易已关闭</li>
+        </ul>
+        <h4 style="margin-top:12px;">微信 · 单号后缀钩子</h4>
+        <ul>
+          <li><code>out_trade_no</code> 后缀 <code>-CLOSED</code> 已关闭</li>
+          <li><code>out_trade_no</code> 后缀 <code>-REVOKED</code> 已撤销</li>
+          <li><code>out_trade_no</code> 后缀 <code>-PAYERROR</code> 支付失败</li>
+        </ul>
+      </div>
+      <div>
+        <h4>CA · 证件号（identityNumber）</h4>
+        <ul>
+          <li><code>TEST-REVIEW</code> 待审核</li>
+          <li><code>TEST-REJECT</code> 备案被拒</li>
+          <li><code>TEST-CERT-PENDING</code> 证书待下发</li>
+          <li><code>TEST-DISABLED</code> 账号停用</li>
+          <li><code>TEST-CERT-EXPIRED</code> 证书已过期</li>
+          <li><code>TEST-REVOKED</code> 证书已吊销</li>
+          <li><code>TEST-SIGN-FAIL</code> 签名失败</li>
+          <li><code>TEST-SIGN-REJECT</code> 拒签</li>
+          <li><code>TEST-BAD-SIGNATURE</code> 签名值损坏</li>
+          <li><code>TEST-BAD-ENVELOPE</code> 内嵌摘要不符</li>
+          <li><code>TEST-VERIFY-FAIL</code> 验签不通过</li>
+          <li><code>TEST-SLOW</code> / <code>TEST-TIMEOUT</code> / <code>TEST-HTTP500</code> / <code>TEST-BADJSON</code></li>
+        </ul>
+      </div>
+      <div>
+        <h4>常用端点</h4>
+        <ul>
+          <li><code>GET /mock/health</code></li>
+          <li><code>POST /mock/reset</code></li>
+          <li><code>GET /mock/requests?protocol=&amp;op=&amp;limit=</code></li>
+          <li><code>GET|PUT /mock/config?protocol=</code></li>
+          <li>CA 遥控器：<code>/mock/ca/**</code></li>
+        </ul>
+      </div>
+    </div>
+  </details>
+</section>
+
+<div id="toast"></div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const expanded = new Set();
+
+function esc(v) {
+  return String(v == null ? '' : v)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+async function raw(path, opts) {
+  const res = await fetch(path, opts);
+  const text = await res.text();
+  if (!res.ok) throw new Error('HTTP ' + res.status + ' ' + text);
+  return text;
+}
+async function json(path, opts) {
+  const text = await raw(path, opts);
+  try { return JSON.parse(text); } catch (e) { return text; }
+}
+
+let toastTimer;
+function toast(msg, isErr) {
+  const el = $('#toast');
+  el.textContent = msg;
+  el.classList.toggle('err', !!isErr);
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 1800);
+}
+
+function pretty(text) {
+  if (text == null) return '';
+  const t = String(text).trim();
+  if (!t) return '';
+  if (t[0] === '{' || t[0] === '[') {
+    try { return JSON.stringify(JSON.parse(t), null, 2); } catch (e) { return t; }
+  }
+  if (t[0] === '<') return prettyXml(t);
+  return t;
+}
+function prettyXml(xml) {
+  const formatted = xml.replace(/(>)(<)(\/*)/g, '$1\n$2$3');
+  let pad = 0;
+  return formatted.split('\n').map((node) => {
+    let indent = 0;
+    if (node.match(/.+<\/\w[^>]*>$/)) indent = 0;
+    else if (node.match(/^<\/\w/)) { if (pad !== 0) pad -= 1; }
+    else if (node.match(/^<\w[^>]*[^/]>.*$/)) indent = 1;
+    const line = '  '.repeat(pad) + node;
+    pad += indent;
+    return line;
+  }).join('\n');
+}
+
+// ---------- 状态 ----------
+async function refreshHealth() {
+  try {
+    const h = await json('/mock/health');
+    $('#health').innerHTML = '<span class="dot ok"></span>' + esc(h.status)
+      + ' · 报文 ' + esc(h.transactions) + ' · 协议 ' + esc((h.protocols || []).join(', '));
+  } catch (e) {
+    $('#health').innerHTML = '<span class="dot bad"></span>不可达：' + esc(e.message);
+  }
+}
+
+$('#btn-reset').addEventListener('click', async () => {
+  if (!confirm('确认重置全部协议状态并清空报文流水？')) return;
+  try {
+    await raw('/mock/reset', { method: 'POST' });
+    toast('已重置');
+    refreshHealth();
+    loadRequests();
+  } catch (e) { toast('重置失败：' + e.message, true); }
+});
+
+// ---------- 报文流水 ----------
+async function loadRequests() {
+  const qs = new URLSearchParams();
+  const protocol = $('#f-protocol').value;
+  const op = $('#f-op').value.trim();
+  if (protocol) qs.set('protocol', protocol);
+  if (op) qs.set('op', op);
+  qs.set('limit', $('#f-limit').value || '100');
+  try {
+    const list = await json('/mock/requests?' + qs.toString());
+    renderRequests(Array.isArray(list) ? list : []);
+  } catch (e) {
+    $('#requests').innerHTML = '<div class="empty">加载失败：' + esc(e.message) + '</div>';
+  }
+}
+
+function renderRequests(list) {
+  const host = $('#requests');
+  if (!list.length) { host.innerHTML = '<div class="empty">暂无报文</div>'; return; }
+  const live = new Set();
+  const rows = list.map((e) => {
+    const key = [e.time, e.protocol, e.op, e.refId].join('|');
+    live.add(key);
+    const open = expanded.has(key);
+    const head = '<tr class="entry" data-key="' + esc(key) + '">'
+      + '<td class="muted">' + esc(e.time) + '</td>'
+      + '<td><span class="pill ' + esc(e.protocol) + '">' + esc(e.protocol) + '</span></td>'
+      + '<td>' + esc(e.op) + '</td>'
+      + '<td class="muted">' + esc(e.refId) + '</td>'
+      + '<td class="status-' + esc(String(e.httpStatus).charAt(0)) + 'xx">' + esc(e.httpStatus) + '</td>'
+      + '</tr>';
+    if (!open) return head;
+    const detail = '<tr class="detail"><td colspan="5"><div class="payloads">'
+      + '<div><h4>Request</h4><pre>' + esc(pretty(e.request)) + '</pre></div>'
+      + '<div><h4>Response</h4><pre>' + esc(pretty(e.response)) + '</pre></div>'
+      + '</div></td></tr>';
+    return head + detail;
+  }).join('');
+  host.innerHTML = '<table><thead><tr><th>时间</th><th>协议</th><th>操作码</th><th>参考号</th><th>HTTP</th></tr></thead><tbody>'
+    + rows + '</tbody></table>';
+  for (const key of [...expanded]) if (!live.has(key)) expanded.delete(key);
+
+  host.querySelectorAll('tr.entry').forEach((tr) => {
+    tr.addEventListener('click', () => {
+      const key = tr.getAttribute('data-key');
+      if (expanded.has(key)) expanded.delete(key); else expanded.add(key);
+      loadRequests();
+    });
+  });
+}
+
+$('#btn-refresh').addEventListener('click', loadRequests);
+$('#f-protocol').addEventListener('change', loadRequests);
+$('#f-op').addEventListener('change', loadRequests);
+$('#f-limit').addEventListener('change', loadRequests);
+
+let autoTimer;
+$('#f-auto').addEventListener('change', (ev) => {
+  clearInterval(autoTimer);
+  if (ev.target.checked) autoTimer = setInterval(loadRequests, 2500);
+});
+
+// ---------- 配置与故障注入 ----------
+const PRESETS = {
+  chs: [
+    { label: '恢复默认', patch: { forceDelayMs: 0, slowDelayMs: 31000, forceInfcode: null, forceErrMsg: null, signInRequired: true } },
+    { label: '业务拒绝 -1', patch: { forceInfcode: -1, forceErrMsg: '强制应答' } },
+    { label: '强制成功 0', patch: { forceInfcode: 0 } },
+    { label: '固定延迟 3s', patch: { forceDelayMs: 3000 } },
+    { label: '关闭登录校验', patch: { signInRequired: false } }
+  ],
+  alipay: [
+    { label: '跳过请求验签', patch: { requireRequestSign: false } },
+    { label: '开启请求验签', patch: { requireRequestSign: true } }
+  ],
+  wxpay: [
+    { label: '跳过请求验签', patch: { requireRequestSign: false } },
+    { label: '开启请求验签', patch: { requireRequestSign: true } }
+  ],
+  ca: [
+    { label: '恢复默认', patch: { fault: 'NONE', faultOp: null, forceDelayMs: 0, forceErrorCode: null, forceMessage: null } },
+    { label: 'HTTP 500', patch: { fault: 'HTTP500' } },
+    { label: '非 JSON 正文', patch: { fault: 'BADJSON' } },
+    { label: '慢响应 SLOW', patch: { fault: 'SLOW' } },
+    { label: '超时 TIMEOUT', patch: { fault: 'TIMEOUT' } }
+  ]
+};
+
+function renderPresets(protocol) {
+  const host = $('#cfg-presets');
+  host.innerHTML = '';
+  (PRESETS[protocol] || []).forEach((preset) => {
+    const btn = document.createElement('button');
+    btn.className = 'mini';
+    btn.textContent = preset.label;
+    btn.addEventListener('click', () => applyPatch(protocol, preset.patch));
+    host.appendChild(btn);
+  });
+}
+
+async function applyPatch(protocol, patch) {
+  try {
+    const view = await json('/mock/config?protocol=' + encodeURIComponent(protocol), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch)
+    });
+    $('#cfg-json').value = JSON.stringify(view, null, 2);
+    toast('已应用：' + Object.keys(patch).join(', '));
+  } catch (e) { toast('应用失败：' + e.message, true); }
+}
+
+async function loadConfig() {
+  const protocol = $('#cfg-protocol').value;
+  renderPresets(protocol);
+  try {
+    const view = await json('/mock/config?protocol=' + encodeURIComponent(protocol));
+    $('#cfg-json').value = typeof view === 'string' ? view : JSON.stringify(view, null, 2);
+  } catch (e) { toast('读取失败：' + e.message, true); }
+}
+
+$('#cfg-protocol').addEventListener('change', loadConfig);
+$('#btn-cfg-load').addEventListener('click', loadConfig);
+$('#btn-cfg-apply').addEventListener('click', async () => {
+  const protocol = $('#cfg-protocol').value;
+  let patch;
+  try { patch = JSON.parse($('#cfg-json').value); }
+  catch (e) { toast('JSON 解析失败：' + e.message, true); return; }
+  await applyPatch(protocol, patch);
+});
+
+// ---------- 启动 ----------
+refreshHealth();
+loadRequests();
+loadConfig();
+setInterval(refreshHealth, 5000);
+</script>
+</body>
+</html>

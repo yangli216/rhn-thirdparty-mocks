@@ -1,0 +1,129 @@
+server:
+  port: 18090
+  address: 127.0.0.1
+
+mock:
+  # 已收报文环形缓冲容量（各协议共用）
+  requests-buffer-size: 1000
+
+  chs:
+    # 业务端点路径，可配置
+    business-path: /hsa/api
+    # 非空即校验请求头 X-Token；置空关闭校验
+    x-token: mock-token
+    # 除 9001 外是否必须携带有效的 sign_no
+    sign-in-required: true
+    # 甲类统筹支付比例
+    ip-pool-ratio: 0.80
+    # 乙类先行自付比例
+    preself-ratio: 0.15
+    # 乙类先行自付后统筹支付比例
+    ip-pool-ratio-b: 0.70
+    # TEST-SLOW 场景在 2206 的延迟毫秒数（默认超过 30 秒，用于验证客户端超时）
+    slow-delay-ms: 31000
+    # 2204 是否要求先有 2203A 诊断。默认不要求，供挂号时结算（2201→2204→2206→2207，不传 2203A）；
+    # 需验证“平台要求挂号带诊断”的拒绝提示时，经 PUT /mock/config {"diagnosisRequired":true} 打开，
+    # POST /mock/reset 复位为本启动值。
+    diagnosis-required: false
+    # 证件号别名：身份证号 -> TEST-* 测试人员证件号。1101 命中后按目标人员选场景、生成 psn_no=PSN-<TEST-*>，
+    # 但 baseinfo.certno 与后续 2201 凭证仍是请求里的身份证号。
+    # 以下对应 RHN 本地演示患者 HRMOCK0001~0012，仅联调用。身份证号匹配不区分大小写（末位 X）、忽略首尾空格。
+    cert-aliases:
+      "330102197503129014": TEST-310
+      "330102196207219029": TEST-390
+      "330102198011059034": TEST-MULTI
+      "330102197101309047": TEST-SUSPENDED
+      "33010219690909905X": TEST-REJECT-2206
+      "33010219830418906X": TEST-IMBALANCE
+      "330102197712029079": TEST-MISSING-AMT
+      "330102198506259089": TEST-SLOW
+      "330102199002149091": TEST-HTTP500
+      "33010219880808910X": TEST-BADJSON
+      "330102197905279111": TEST-SIGN-EXPIRE
+      "330102199210039129": TEST-NOINSU
+
+  alipay:
+    # 网关端点路径，对应 AlipayConfig.serverUrl
+    gateway-path: /alipay/gateway.do
+    app-id: mock-alipay-app
+    seller-id: "2088mock"
+    sign-type: RSA2
+    charset: UTF-8
+    # 是否校验请求签名；可经 /mock/config?protocol=alipay 临时关闭排障
+    require-request-sign: true
+    # 账单下载链接查询返回的地址前缀（指向本服务；换端口时同步修改）。注意 RHN 的下载器只放行 https 的 dwbillcenter*.alipay.com，见 docs/payment-reconciliation-mock.md
+    bill-download-base-url: http://127.0.0.1:18090/alipay/bill/download
+    # 故障注入/中间状态默认值（运行时可经 /mock/config?protocol=alipay 改，见 docs/payment-mock-scenarios.md）
+    # SLOW 延迟；TIMEOUT 延迟需大于 RHN 的 15s 读超时
+    slow-delay-ms: 3000
+    timeout-delay-ms: 20000
+    # “处理中”订单被查询多少次后自动落到终态
+    pending-queries: 2
+    # 一次性 throwaway 材料（非真实商户密钥）：给响应加签
+    response-sign-private-key: classpath:mock/alipay/alipay-private-key.pem
+    # 一次性 throwaway 材料：校验请求签名（对应应用侧私钥）
+    request-verify-public-key: classpath:mock/alipay/app-public-key.pem
+
+  wxpay:
+    # 端点基址，对应 WxPayConfig.apiHostUrl；子路径 /pay/micropay 等由 WxJava 拼接
+    base-path: /wxpay
+    # 请求缺省回填值；响应优先回显请求的 appid/mch_id
+    app-id: wxmockappid00001
+    mch-id: "1900000109"
+    # MD5 加签/验签密钥，必须与调用方商户的 API v2 密钥一致
+    api-key: "0123456789abcdef0123456789abcdef"
+    default-bank-type: CFB_DEBIT
+    # 是否校验请求签名；可经 /mock/config?protocol=wxpay 临时关闭排障
+    require-request-sign: true
+    # 同 mock.alipay.*：SLOW / TIMEOUT 延迟与“处理中”自动落地所需的查询次数
+    slow-delay-ms: 3000
+    timeout-delay-ms: 20000
+    pending-queries: 2
+
+  ca:
+    # 业务端点基址，操作路径为 <base-path>/v1/<组>/<操作>
+    base-path: /ca
+    vendor-code: mock-ca
+    # RHN 适配器调用 Mock 携带的凭据（X-Client-Id / X-Client-Secret）；client-secret 置空关闭校验
+    client-id: mock-ca-client
+    client-secret: mock-ca-secret
+    # 一次性 throwaway 材料（非真实 CA）：固定根证书 / 时间戳密钥，重启后信任锚不变
+    root-cert: classpath:mock/ca/ca-root-cert.pem
+    root-key: classpath:mock/ca/ca-root-key.pem
+    tsa-cert: classpath:mock/ca/ca-tsa-cert.pem
+    tsa-key: classpath:mock/ca/ca-tsa-key.pem
+    # 终端证书有效期（天）
+    signer-validity-days: 365
+    # 扫码登录请求与证书登录挑战有效期（秒），与 RHN 的 120 秒一致
+    login-challenge-ttl-seconds: 120
+    # SLOW / TIMEOUT 故障的延迟毫秒数（TIMEOUT 默认超过 30 秒，用于验证客户端超时）
+    slow-delay-ms: 5000
+    timeout-delay-ms: 31000
+    # 待签任务 / 登录请求 / 自动签授权被查询时是否自动完成（免去手工点手机确认，端到端联调用）
+    auto-confirm-orders: false
+    # 非空：扫码登录被轮询时自动以该 externalSignerId 确认
+    auto-confirm-login-signer: ""
+
+  fiscal:
+    # 业务端点基址，操作路径为 <base-path>/v1/receipts/{issue|query|void|redFlush}
+    base-path: /fiscal
+    # RHN 适配器调用 Mock 携带的凭据（X-Client-Id / X-Client-Secret）；client-secret 置空关闭校验
+    client-id: mock-fiscal-client
+    client-secret: mock-fiscal-secret
+    # 开具结果 verifyUrl 的前缀（指向本服务的查验页；换端口时同步修改）
+    verify-base-url: http://127.0.0.1:18090/fiscal/verify
+    # SLOW / TIMEOUT 故障的延迟毫秒数（TIMEOUT 默认超过 30 秒，用于验证客户端超时）
+    slow-delay-ms: 5000
+    timeout-delay-ms: 31000
+    # PENDING 场景：开具后被查询多少次仍返回“处理中”，之后才出票成功
+    pending-queries: 1
+    # 异步结果回调：非空时主动向该地址推送（HMAC-SHA256 签名，密钥 callback-secret）
+    callback-url: ""
+    callback-secret: mock-fiscal-callback-secret
+    # PENDING 场景是否在 callback-delay-ms 后自动出票成功并推送回调（否则靠查询或 /mock/fiscal/receipts/{ref}/complete）
+    auto-callback: false
+    callback-delay-ms: 1000
+
+logging:
+  level:
+    root: info
